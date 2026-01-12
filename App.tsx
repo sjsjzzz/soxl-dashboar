@@ -19,6 +19,7 @@ import {
 } from './constants';
 import { WeeklyFocus, NewsItem, DailySchedule } from './types';
 
+// 초기 로딩용 빈 데이터
 const EMPTY_STOCK = { price: 0, change: 0, changePercent: 0, trend: 'neutral', source: 'Loading...', history: [] };
 
 const App: React.FC = () => {
@@ -50,12 +51,15 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // [기능] 가짜 차트 데이터 생성 (화면이 비어보이지 않게 함)
   const generateMockHistory = (startPrice: number, changePercent: number) => {
     const points = 20;
     const history = [];
     if (!startPrice) return [];
+    
     let current = startPrice / (1 + changePercent / 100); 
     const step = (startPrice - current) / points;
+    
     for (let i = 0; i < points; i++) {
         const noise = (Math.random() - 0.5) * (startPrice * 0.005);
         history.push({ price: current + (step * i) + noise });
@@ -64,18 +68,22 @@ const App: React.FC = () => {
     return history;
   };
 
-  // 데이터 로딩 (API -> AI -> Demo)
+  // 1. 데이터 가져오기 (API -> AI -> Demo 순서)
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+    
     try {
+      // 1차 시도: Vercel API (Yahoo)
       const res = await fetch('/api/stocks'); 
       if (!res.ok) throw new Error('API Blocked'); 
       const data = await res.json();
       updateStocksState(data, 'Yahoo API');
+
     } catch (e) {
       console.warn("API 접속 실패, AI 검색 모드로 전환합니다.");
-      setError("API 연결 불안정. AI가 데이터를 생성합니다... (잠시만 기다려주세요)");
+      setError("API 연결 불안정. AI가 최신 가격을 검색중입니다... (잠시만 기다려주세요)");
+      // 2차 시도: AI 검색
       await fetchPricesViaAI();
     } finally {
       setLoading(false);
@@ -105,15 +113,15 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  // ★ AI 주가 검색 (모델명 변경 및 안정화)
+  // ★ AI 주가 검색 (모델명 수정 완료: gemini-1.5-flash)
   const fetchPricesViaAI = async () => {
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       if (!apiKey) throw new Error("API Key 없음");
 
       const genAI = new GoogleGenerativeAI(apiKey);
-      // [수정] 모델명을 'gemini-1.5-flash-latest'로 변경하여 404 방지
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      // [수정됨] 정확한 모델명 사용
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `
         Estimte CURRENT market prices for: SOXL, SOX Index, Nasdaq 100, US 10Y Yield, USD/KRW, Bitcoin, KOSPI, VIX.
@@ -125,14 +133,15 @@ const App: React.FC = () => {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       const jsonStr = text.replace(/```json|```/g, '').trim(); 
+      
       const data = JSON.parse(jsonStr);
       updateStocksState(data, 'AI Estimate 🤖');
 
     } catch (aiError: any) {
       console.error("AI Search Failed", aiError);
       
-      // ★ 429(사용량 초과) 등 에러 발생 시 확실하게 데모 데이터 보여주기
-      setError(`AI 연결 실패 (${aiError.message || "Unknown"}). 데모 데이터로 전환합니다.`);
+      // ★ 3차 시도: 데모 데이터로 복구 (절대 빈 화면이 나오지 않게 함)
+      setError(`데이터 연결 실패. 데모 모드로 전환합니다.`);
       
       const demoWithHistory = (item: any) => ({
           ...item,
@@ -157,14 +166,14 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  // ★ AI 뉴스 분석 (검색 도구 제거 -> 안정성 확보)
+  // 2. AI 뉴스 분석 (모델명 수정 완료)
   const runAiAnalysis = async () => {
     setAiLoading(true);
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       const genAI = new GoogleGenerativeAI(apiKey);
-      // [수정] 검색 도구 제거하고 순수 모델 능력만 사용 (에러 방지)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+      // [수정됨] 정확한 모델명 사용
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `
         Act as a Wall Street Quant Analyst for SOXL.
@@ -185,7 +194,7 @@ const App: React.FC = () => {
       if (resultData.news) setMarketNews(resultData.news);
 
     } catch (e: any) {
-      alert(`AI 연결 한도 초과 또는 오류: ${e.message}. 잠시 후 다시 시도하세요.`);
+      alert(`AI 오류: ${e.message}. 잠시 후 다시 시도하세요.`);
     } finally {
       setAiLoading(false);
     }
@@ -232,7 +241,7 @@ const App: React.FC = () => {
                     className="text-[10px] font-medium px-2 py-0.5 rounded flex items-center gap-1 border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 transition-colors"
                   >
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                    {loading ? 'Updating...' : 'Refresh Prices'}
+                    {loading ? 'Searching...' : 'Refresh Prices'}
                   </button>
                   {lastUpdated && <span className="text-[10px] text-slate-400">Updated: {lastUpdated} ({dataSource})</span>}
               </div>

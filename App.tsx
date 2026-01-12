@@ -113,14 +113,14 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  // ★ AI 주가 검색 (모델명 수정 완료: gemini-1.5-flash)
+  // ★ AI 주가 검색 (모델명 1.5-flash로 복구)
   const fetchPricesViaAI = async () => {
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       if (!apiKey) throw new Error("API Key 없음");
 
       const genAI = new GoogleGenerativeAI(apiKey);
-      // [수정됨] 정확한 모델명 사용
+      // [수정 완료] 올바른 모델명 사용
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `
@@ -140,8 +140,8 @@ const App: React.FC = () => {
     } catch (aiError: any) {
       console.error("AI Search Failed", aiError);
       
-      // ★ 3차 시도: 데모 데이터로 복구 (절대 빈 화면이 나오지 않게 함)
-      setError(`데이터 연결 실패. 데모 모드로 전환합니다.`);
+      // ★ 실패 시(쿼터 초과 등) 메시지를 띄우고 데모 데이터 표시
+      setError(`AI 연결 한도 초과(무료 사용량 소진). 데모 데이터로 전환합니다.`);
       
       const demoWithHistory = (item: any) => ({
           ...item,
@@ -166,13 +166,13 @@ const App: React.FC = () => {
     fetchData();
   }, []);
 
-  // 2. AI 뉴스 분석 (모델명 수정 완료)
+  // 2. AI 뉴스 분석
   const runAiAnalysis = async () => {
     setAiLoading(true);
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       const genAI = new GoogleGenerativeAI(apiKey);
-      // [수정됨] 정확한 모델명 사용
+      // [수정 완료] 올바른 모델명 사용
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const prompt = `
@@ -194,7 +194,7 @@ const App: React.FC = () => {
       if (resultData.news) setMarketNews(resultData.news);
 
     } catch (e: any) {
-      alert(`AI 오류: ${e.message}. 잠시 후 다시 시도하세요.`);
+      alert(`AI 연결 한도 초과 또는 오류: ${e.message}. 잠시 후 다시 시도하세요.`);
     } finally {
       setAiLoading(false);
     }

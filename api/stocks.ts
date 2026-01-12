@@ -1,61 +1,75 @@
-import yahooFinance from 'yahoo-finance2';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import yahooFinance from "yahoo-finance2";
 
 export const config = {
-  runtime: 'nodejs', // 호환성을 위해 Node.js 런타임 사용
+  runtime: "nodejs",
 };
 
-export default async function handler(request: Request) {
+type Stock = {
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  preMarketPrice?: number | null;
+  preMarketChangePercent?: number | null;
+};
+
+const toNum = (v: any): number | null => {
+  if (typeof v === "number") return v;
+  if (v && typeof v.raw === "number") return v.raw;
+  return null;
+};
+
+// ^TNX가 41.5처럼 들어오는 경우 4.15로 보정
+const normalizeTnx = (v: number | null) => {
+  if (v === null) return null;
+  return v > 20 ? v / 10 : v;
+};
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    // 1. 가져올 종목 심볼 정의
-    // SOXL, 필라델피아반도체, 나스닥100, 미10년물, 환율, 비트코인, 코스피, VIX
-    const symbols = ['SOXL', '^SOX', '^NDX', '^TNX', 'KRW=X', 'BTC-USD', '^KS11', '^VIX'];
-    const queryOptions = { modules: ['price', 'summaryDetail'] };
-    
-    // 2. 야후 파이낸스에서 데이터 병렬 요청 (하나라도 실패해도 나머지는 가져오도록 처리)
-    const results = await Promise.all(
-      symbols.map(sym => yahooFinance.quoteSummary(sym, queryOptions).catch(e => null))
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=300");
+
+    const symbols = {
+      soxl: "SOXL",
+      sox: "^SOX",
+      ndx: "^NDX",
+      tnx: "^TNX",
+      krw: "KRW=X",
+      btc: "BTC-USD",
+      kospi: "^KS11",
+      vix: "^VIX",
+    } as const;
+
+    const entries = await Promise.all(
+      Object.entries(symbols).map(async ([key, sym]) => {
+        try {
+          const q: any = await yahooFinance.quote(sym);
+
+          const stock: Stock = {
+            price: toNum(q.regularMarketPrice),
+            change: toNum(q.regularMarketChange),
+            changePercent: toNum(q.regularMarketChangePercent),
+            preMarketPrice: toNum(q.preMarketPrice),
+            preMarketChangePercent: toNum(q.preMarketChangePercent),
+          };
+
+          if (key === "tnx") {
+            stock.price = normalizeTnx(stock.price);
+            // changePercent는 그대로 둬도 됨 (표시용)
+          }
+
+          return [key, stock] as const;
+        } catch {
+          // 하나 실패해도 전체는 살려주기
+          return [key, { price: null, change: null, changePercent: null }] as const;
+        }
+      })
     );
 
-    // 3. 데이터 포맷 정리
-    const data = {
-      soxl: formatData(results[0]),
-      sox: formatData(results[1]),
-      ndx: formatData(results[2]),
-      tnx: formatData(results[3]),
-      krw: formatData(results[4]),
-      btc: formatData(results[5]),
-      kospi: formatData(results[6]),
-      vix: formatData(results[7]),
-      lastUpdated: new Date().toISOString()
-    };
-
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 's-maxage=60, stale-while-revalidate=30' // 1분 캐시
-      },
-    });
-
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: 'Failed to fetch stock data', details: error.toString() }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const data = Object.fromEntries(entries);
+    return res.status(200).json({ ...data, lastUpdated: new Date().toISOString() });
+  } catch (e: any) {
+    return res.status(500).json({ error: "Failed to fetch stock data", details: String(e?.message || e) });
   }
-}
-
-// 헬퍼 함수: 야후 데이터 깔끔하게 정리
-function formatData(rawData: any) {
-  if (!rawData || !rawData.price) return null;
-  
-  const price = rawData.price;
-  return {
-    price: price.regularMarketPrice,
-    change: price.regularMarketChange,
-    changePercent: (price.regularMarketChangePercent || 0) * 100, // 0.01 단위 -> % 단위 변환
-    preMarketPrice: price.preMarketPrice || null,
-    preMarketChangePercent: (price.preMarketChangePercent || 0) * 100,
-    trend: (price.regularMarketChange || 0) >= 0 ? 'up' : 'down'
-  };
 }

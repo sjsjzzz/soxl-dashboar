@@ -68,7 +68,7 @@ const App: React.FC = () => {
   const runAiAnalysis = async () => {
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       
       // Prompt optimized for Search Grounding
       const prompt = `

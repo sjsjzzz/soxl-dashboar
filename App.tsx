@@ -24,10 +24,10 @@ const App: React.FC = () => {
   const [time, setTime] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>("Just now");
   const [error, setError] = useState<string | null>(null);
 
-  // Data States
+  // Data States - Initialized with Dummy Data for Demo
   const [soxl, setSoxl] = useState(INITIAL_SOXL);
   const [sox, setSox] = useState(INITIAL_SOX);
   const [ndx, setNdx] = useState(INITIAL_NDX);
@@ -49,47 +49,19 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch Real Stock Data
+  // Simulate Data Fetch (Since no backend exists in this demo)
   const fetchData = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const response = await fetch('/api/stocks');
-      if (!response.ok) throw new Error('API request failed');
-      
-      const data = await response.json();
-      
-      if (data.market) {
-        setSoxl(prev => ({ ...prev, ...data.market.soxl, trend: data.market.soxl.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setSox(prev => ({ ...prev, ...data.market.sox, trend: data.market.sox.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setNdx(prev => ({ ...prev, ...data.market.ndx, trend: data.market.ndx.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setTnx(prev => ({ ...prev, ...data.market.tnx, trend: data.market.tnx.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setKrw(prev => ({ ...prev, ...data.market.krw, trend: data.market.krw.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setVix(prev => ({ ...prev, ...data.market.vix, trend: data.market.vix.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setBtc(prev => ({ ...prev, ...data.market.btc, trend: data.market.btc.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-        setKospi(prev => ({ ...prev, ...data.market.kospi, trend: data.market.kospi.changePercent >= 0 ? Trend.UP : Trend.DOWN }));
-
-        setConstituents(prev => prev.map(item => {
-          const liveData = data.constituents.find((c: any) => c.symbol === item.symbol);
-          if (liveData) {
-            return {
-              ...item,
-              price: liveData.price,
-              changePercent: liveData.changePercent,
-              trend: liveData.changePercent >= 0 ? Trend.UP : Trend.DOWN
-            };
-          }
-          return item;
-        }));
-
-        setLastUpdated(new Date().toLocaleTimeString());
-      }
-    } catch (err) {
-      console.error(err);
-      setError("실시간 주가 데이터를 불러오는데 실패했습니다.");
-    } finally {
+    
+    // Simulate network delay
+    setTimeout(() => {
+      // In a real app, this would fetch from /api/stocks
+      // For this demo, we reset to initial dummy data to show functionality
+      setSoxl(INITIAL_SOXL);
+      setLastUpdated(new Date().toLocaleTimeString());
       setLoading(false);
-    }
+    }, 800);
   };
 
   // AI Analysis Logic (With Google Search Grounding)
@@ -176,10 +148,6 @@ const App: React.FC = () => {
       setAiLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });

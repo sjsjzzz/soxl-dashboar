@@ -4,7 +4,6 @@ import MacroCard from './components/MacroCard';
 import RsiBar from './components/RsiBar';
 import SparkLine from './components/SparkLine';
 import Heatmap from './components/Heatmap';
-// [수정] 웹 표준 라이브러리로 변경
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { 
   WEEKLY_FOCUS as INITIAL_FOCUS, WEEKLY_SCHEDULE as INITIAL_SCHEDULE, IMPACT_ANALYSIS, MARKET_NEWS as INITIAL_NEWS,
@@ -52,19 +51,20 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // [신규 기능] 등락률에 맞춰 가짜 차트 데이터 생성 (화면이 비어보이지 않게 함)
+  // [기능] 가짜 차트 데이터 생성 (화면이 비어보이지 않게 함)
   const generateMockHistory = (startPrice: number, changePercent: number) => {
     const points = 20;
     const history = [];
-    let current = startPrice / (1 + changePercent / 100); // 시작가 역산
+    if (!startPrice) return [];
+    
+    let current = startPrice / (1 + changePercent / 100); 
     const step = (startPrice - current) / points;
     
     for (let i = 0; i < points; i++) {
-        // 약간의 랜덤 노이즈 추가하여 리얼하게
         const noise = (Math.random() - 0.5) * (startPrice * 0.005);
         history.push({ price: current + (step * i) + noise });
     }
-    history.push({ price: startPrice }); // 마지막은 현재가
+    history.push({ price: startPrice });
     return history;
   };
 
@@ -89,12 +89,11 @@ const App: React.FC = () => {
   };
 
   const updateStocksState = (data: any, sourceLabel: string) => {
-    // 받은 데이터에 'history' 배열이 없으면 자동 생성해서 넣음
     const process = (item: any) => ({
         ...item,
         source: sourceLabel,
         trend: item.change >= 0 ? 'up' : 'down',
-        history: item.history || generateMockHistory(item.price, item.changePercent)
+        history: item.history && item.history.length > 0 ? item.history : generateMockHistory(item.price, item.changePercent)
     });
 
     setStocks({
@@ -112,13 +111,12 @@ const App: React.FC = () => {
     setError(null);
   };
 
-  // ★ AI 주가 검색 (Google Generative AI 표준 방식)
+  // ★ AI 주가 검색 (표준 SDK 사용)
   const fetchPricesViaAI = async () => {
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
       if (!apiKey) throw new Error("API Key 없음");
 
-      // [수정] 표준 SDK 사용
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -131,7 +129,7 @@ const App: React.FC = () => {
 
       const result = await model.generateContent(prompt);
       const text = result.response.text();
-      const jsonStr = text.replace(/```json|```/g, '').trim(); // 코드블록 제거
+      const jsonStr = text.replace(/```json|```/g, '').trim(); 
       
       const data = JSON.parse(jsonStr);
       updateStocksState(data, 'AI Search 🤖');
@@ -139,7 +137,7 @@ const App: React.FC = () => {
     } catch (aiError) {
       console.error("AI Search Failed", aiError);
       setError("데이터 연결 실패. (데모 모드)");
-      // 최후의 수단: 데모 데이터에도 히스토리 추가
+      
       const demoWithHistory = (item: any) => ({
           ...item,
           history: generateMockHistory(item.price, item.changePercent)
@@ -186,7 +184,7 @@ const App: React.FC = () => {
 
       if (resultData.weeklyFocus) setWeeklyFocus(resultData.weeklyFocus);
       if (resultData.schedule) setWeeklySchedule(resultData.schedule);
-      if (resultData.news) setMarketNews(resultData.news); // 링크 처리 생략 (단순화)
+      if (resultData.news) setMarketNews(resultData.news);
 
     } catch (e: any) {
       alert(`AI 오류: ${e.message}`);

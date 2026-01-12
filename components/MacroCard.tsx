@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight, Minus, Database, Info } from 'lucide-react';
 import { Trend } from '../types';
-import TrendLine from './TrendLine';
+import SparkLine from './SparkLine';
 
 interface MacroCardProps {
   title: string;
@@ -9,11 +9,12 @@ interface MacroCardProps {
   change?: string;
   trend?: Trend;
   source?: string;
-  impact?: string; // New: Explanation text
+  impact?: string; 
+  history?: number[]; // Added: History data for SparkLine
   children?: React.ReactNode;
 }
 
-const MacroCard: React.FC<MacroCardProps> = ({ title, value, change, trend, source, impact, children }) => {
+const MacroCard: React.FC<MacroCardProps> = ({ title, value, change, trend, source, impact, history, children }) => {
   const getTrendColor = (t?: Trend) => {
     if (t === Trend.UP) return 'text-emerald-600';
     if (t === Trend.DOWN) return 'text-rose-600';
@@ -27,9 +28,9 @@ const MacroCard: React.FC<MacroCardProps> = ({ title, value, change, trend, sour
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative overflow-hidden h-full min-h-[150px]">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative overflow-hidden h-full min-h-[140px]">
       
-      <div className="flex justify-between items-start mb-2 relative z-10">
+      <div className="flex justify-between items-start mb-1 relative z-10">
         <h3 className="text-slate-500 text-xs font-bold uppercase tracking-wide">{title}</h3>
         {children && <div className="text-xs text-slate-400">Index</div>}
       </div>
@@ -40,9 +41,15 @@ const MacroCard: React.FC<MacroCardProps> = ({ title, value, change, trend, sour
         </div>
       ) : (
         <div className="flex flex-col gap-1 relative z-10">
-          <div className="flex justify-between items-end">
-             <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight">{value}</span>
-             <TrendLine trend={trend} width={60} height={30} />
+          <div className="flex justify-between items-end h-[50px]">
+             <span className="text-2xl font-bold font-mono text-slate-900 tracking-tight self-end">{value}</span>
+             <div className="w-[80px] h-[40px] mb-1">
+               {history && history.length > 0 ? (
+                 <SparkLine data={history} trend={trend} />
+               ) : (
+                 <div className="w-full h-full bg-slate-50 rounded animate-pulse"></div> // Loading state
+               )}
+             </div>
           </div>
           {change && (
             <div className={`flex items-center gap-1 text-sm font-bold font-mono ${getTrendColor(trend)}`}>

@@ -24,6 +24,14 @@ const GaugeChart: React.FC<GaugeChartProps> = ({ value, label }) => {
   const iR = 40;
   const oR = 70;
 
+  // Add actionable insight based on score
+  let comment = "Wait & See";
+  if (value > 80) comment = "⚠️ Extreme Greed: Profit Taking";
+  else if (value > 60) comment = "🔥 Momentum: Buy the Dip";
+  else if (value > 40) comment = "⚖️ Neutral: Box Trading";
+  else if (value > 20) comment = "😨 Fear: Accumulate Slowly";
+  else comment = "💎 Extreme Fear: Strong Buy";
+
   return (
     <div className="relative h-28 w-full flex flex-col items-center justify-end">
       <ResponsiveContainer width="100%" height="100%">
@@ -44,9 +52,12 @@ const GaugeChart: React.FC<GaugeChartProps> = ({ value, label }) => {
           </Pie>
         </PieChart>
       </ResponsiveContainer>
-      <div className="absolute bottom-2 flex flex-col items-center">
-        <span className="text-3xl font-bold font-mono text-slate-800">{value}</span>
+      <div className="absolute bottom-0 flex flex-col items-center">
+        <span className="text-3xl font-bold font-mono text-slate-800 leading-none mb-1">{value}</span>
         <span className="text-xs text-slate-500 font-bold uppercase">{label}</span>
+        <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full mt-1 border border-blue-100 whitespace-nowrap">
+           {comment}
+        </span>
       </div>
     </div>
   );

@@ -12,7 +12,8 @@ export interface MarketIndex {
   changePercent: number;
   trend: Trend;
   source: string;
-  impact?: string; // Added: Simple explanation for traders
+  impact?: string;
+  history?: number[];
 }
 
 export interface EtfData extends MarketIndex {
@@ -27,7 +28,8 @@ export interface StockTicker {
   price: number;
   changePercent: number;
   weight: number; 
-  trend: Trend; // Added: Trend for Heatmap sparklines
+  trend: Trend;
+  history?: number[];
 }
 
 export interface FearGreedData {
@@ -36,21 +38,46 @@ export interface FearGreedData {
   source: string;
 }
 
+export interface EarningsEvent {
+  name: string;
+  symbol: string;
+  time: 'BMO' | 'AMC';
+  dayOfWeek: string;    // Added: e.g. "Mon", "Tue"
+  comment: string;      // Added: Short analysis
+}
+
 export interface DailySchedule {
   date: string;
   day: string;
   tags?: string[];
   events: string[];
-  earnings?: { name: string; symbol: string; time: 'BMO' | 'AMC' }[];
+  earnings?: EarningsEvent[];
 }
 
 export interface KeyPoint {
   title: string;
   content: string;
-  impact: string;
+  impact?: string;
 }
 
 export interface ImpactAnalysis {
   title: string;
   items: string[];
+}
+
+export interface WeeklyFocus {
+  title: string;
+  description: string;
+  notes: { label: string; text: string }[];
+}
+
+export interface NewsItem {
+  id: number;
+  source: string;
+  time: string;
+  title: string;
+  sentiment: 'positive' | 'negative' | 'neutral';
+  impact: string; 
+  url?: string; 
+  category: 'macro' | 'sector'; // Added: To distinguish General vs SOXL specific
 }

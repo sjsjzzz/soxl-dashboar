@@ -16,11 +16,8 @@
             },
             colors: {
               slate: {
-                50: '#f8fafc',
-                100: '#f1f5f9',
-                200: '#e2e8f0',
-                800: '#1e293b',
-                900: '#0f172a',
+                850: '#1e293b', 
+                950: '#020617', 
               }
             }
           },
@@ -29,10 +26,10 @@
     </script>
     <style>
       body {
-        background-color: #f1f5f9; /* Light gray background */
+        background-color: #f8fafc; /* Light Slate background */
         color: #0f172a; /* Dark text */
       }
-      /* Custom scrollbar */
+      /* Custom scrollbar for Light Mode */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -53,14 +50,19 @@
   "imports": {
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "recharts": "https://esm.sh/recharts@^3.6.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
+    "react": "https://esm.sh/react@^19.2.3",
+    "yahoo-finance2": "https://esm.sh/yahoo-finance2@^3.11.2",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

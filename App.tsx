@@ -4,6 +4,7 @@ import MacroCard from './components/MacroCard';
 import RsiBar from './components/RsiBar';
 import SparkLine from './components/SparkLine';
 import Heatmap from './components/Heatmap';
+// [중요] 여기가 바뀌어야 에러가 사라집니다!
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { 
   WEEKLY_FOCUS as INITIAL_FOCUS, WEEKLY_SCHEDULE as INITIAL_SCHEDULE, IMPACT_ANALYSIS, MARKET_NEWS as INITIAL_NEWS,

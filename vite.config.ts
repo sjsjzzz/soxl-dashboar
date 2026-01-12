@@ -15,13 +15,9 @@ export default defineConfig(({ mode }) => {
       'process.env': JSON.stringify({ API_KEY: env.API_KEY })
     },
     build: {
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'recharts', 'lucide-react', '@google/genai']
-          }
-        }
-      }
+      // Simplification: Removed manualChunks to let Vite handle chunking automatically.
+      // This avoids 'Rollup failed to resolve' errors if a module cannot be found during the manual chunking phase.
+      outDir: 'dist',
     }
   };
 });

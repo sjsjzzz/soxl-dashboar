@@ -1,3 +1,4 @@
+// api/stocks.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import yahooFinance from "yahoo-finance2";
 
@@ -19,15 +20,17 @@ const toNum = (v: any): number | null => {
   return null;
 };
 
-// ^TNX가 41.5처럼 들어오는 경우 4.15로 보정
+// ^TNX가 41.5(=4.15%)처럼 들어오는 경우를 보정
 const normalizeTnx = (v: number | null) => {
   if (v === null) return null;
+  // 경험적으로 ^TNX가 20보다 크면 10으로 나누면 %로 맞는 경우가 많음
   return v > 20 ? v / 10 : v;
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
+    // 캐시: 30초는 캐시, 백그라운드로 5분까지 재검증
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=300");
 
     const symbols = {
@@ -54,22 +57,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             preMarketChangePercent: toNum(q.preMarketChangePercent),
           };
 
+          // ^TNX 보정
           if (key === "tnx") {
             stock.price = normalizeTnx(stock.price);
-            // changePercent는 그대로 둬도 됨 (표시용)
           }
 
           return [key, stock] as const;
         } catch {
-          // 하나 실패해도 전체는 살려주기
+          // 하나 실패해도 전체를 살림
           return [key, { price: null, change: null, changePercent: null }] as const;
         }
       })
     );
 
     const data = Object.fromEntries(entries);
-    return res.status(200).json({ ...data, lastUpdated: new Date().toISOString() });
+    return res.status(200).json({
+      ...data,
+      lastUpdated: new Date().toISOString(),
+    });
   } catch (e: any) {
-    return res.status(500).json({ error: "Failed to fetch stock data", details: String(e?.message || e) });
+    return res.status(500).json({
+      error: "Failed to fetch stock data",
+      details: String(e?.message || e),
+    });
   }
 }

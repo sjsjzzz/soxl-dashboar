@@ -8,7 +8,7 @@ import { GoogleGenAI } from "@google/genai";
 import { 
   WEEKLY_FOCUS as INITIAL_FOCUS, WEEKLY_SCHEDULE as INITIAL_SCHEDULE, IMPACT_ANALYSIS, MARKET_NEWS as INITIAL_NEWS,
   CONSTITUENTS as INITIAL_CONSTITUENTS,
-  SOXL_ETF as INITIAL_SOXL, // 데모 데이터 불러오기
+  SOXL_ETF as INITIAL_SOXL,
   SOX_INDEX as INITIAL_SOX,
   NASDAQ_DATA as INITIAL_NDX,
   US_TREASURY_DATA as INITIAL_TNX,
@@ -19,7 +19,7 @@ import {
 } from './constants';
 import { WeeklyFocus, NewsItem, DailySchedule } from './types';
 
-// 초기 로딩용 빈 데이터 객체
+// 초기 로딩용 빈 데이터
 const EMPTY_STOCK = { price: 0, change: 0, changePercent: 0, trend: 'neutral', source: 'Loading...' };
 
 const App: React.FC = () => {
@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>("Initializing...");
   const [error, setError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<string>("API"); // 데이터 출처 표시 (API vs AI)
 
   const [stocks, setStocks] = useState<any>({
     soxl: { ...EMPTY_STOCK, price: 0 },
@@ -50,94 +51,143 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 1. 실제 데이터 가져오기 (실패 시 데모 데이터 사용)
+  // 1. 통합 데이터 가져오기 (API 시도 -> 실패 시 AI 검색)
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     
     try {
+      // 1차 시도: Vercel API (Yahoo)
       const res = await fetch('/api/stocks'); 
-      if (!res.ok) throw new Error('Failed to fetch market data');
+      if (!res.ok) throw new Error('API Blocked'); 
       
       const data = await res.json();
-      
-      setStocks({
-        soxl: { ...data.soxl, source: 'Yahoo', trend: data.soxl.change >= 0 ? 'up' : 'down' },
-        sox: { ...data.sox, source: 'Yahoo', trend: data.sox.change >= 0 ? 'up' : 'down' },
-        ndx: { ...data.ndx, source: 'Yahoo', trend: data.ndx.change >= 0 ? 'up' : 'down' },
-        tnx: { ...data.tnx, source: 'Yahoo', trend: data.tnx.change >= 0 ? 'up' : 'down', price: data.tnx.price },
-        krw: { ...data.krw, source: 'Yahoo', trend: data.krw.change >= 0 ? 'down' : 'up' }, 
-        vix: { ...data.vix, source: 'Yahoo', trend: data.vix.change >= 0 ? 'down' : 'up' },
-        btc: { ...data.btc, source: 'Yahoo', trend: data.btc.change >= 0 ? 'up' : 'down' },
-        kospi: { ...data.kospi, source: 'KRX', trend: data.kospi.change >= 0 ? 'up' : 'down' },
-      });
-      
-      setLastUpdated(new Date().toLocaleTimeString());
+      updateStocksState(data, 'Yahoo API');
+
     } catch (e) {
-      console.error(e);
-      // ★ 에러 발생 시 데모 데이터로 복구 (화면이 비어보이지 않게 처리)
-      setError("실시간 데이터 연결 불안정. (데모 모드로 전환됩니다)");
-      setStocks({
-        soxl: INITIAL_SOXL,
-        sox: INITIAL_SOX,
-        ndx: INITIAL_NDX,
-        tnx: INITIAL_TNX,
-        krw: INITIAL_KRW,
-        vix: INITIAL_VIX,
-        btc: INITIAL_BTC,
-        kospi: INITIAL_KOSPI
-      });
-      setLastUpdated("Demo Data");
+      console.warn("API 접속 실패, AI 검색 모드로 전환합니다.");
+      setError("API 연결 불안정. AI가 최신 가격을 검색중입니다... (5초 소요)");
+      
+      // 2차 시도: Gemini AI 검색 (Fallback)
+      await fetchPricesViaAI();
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // 헬퍼: 상태 업데이트 함수
+  const updateStocksState = (data: any, sourceLabel: string) => {
+    setStocks({
+      soxl: { ...data.soxl, source: sourceLabel, trend: data.soxl.change >= 0 ? 'up' : 'down' },
+      sox: { ...data.sox, source: sourceLabel, trend: data.sox.change >= 0 ? 'up' : 'down' },
+      ndx: { ...data.ndx, source: sourceLabel, trend: data.ndx.change >= 0 ? 'up' : 'down' },
+      tnx: { ...data.tnx, source: sourceLabel, trend: data.tnx.change >= 0 ? 'up' : 'down', price: data.tnx.price },
+      krw: { ...data.krw, source: sourceLabel, trend: data.krw.change >= 0 ? 'down' : 'up' }, 
+      vix: { ...data.vix, source: sourceLabel, trend: data.vix.change >= 0 ? 'down' : 'up' },
+      btc: { ...data.btc, source: sourceLabel, trend: data.btc.change >= 0 ? 'up' : 'down' },
+      kospi: { ...data.kospi, source: sourceLabel, trend: data.kospi.change >= 0 ? 'up' : 'down' },
+    });
+    setDataSource(sourceLabel);
+    setLastUpdated(new Date().toLocaleTimeString());
+    setError(null); // 성공하면 에러 메시지 삭제
+  };
 
-  // 2. AI 분석 로직 (모델 변경: 1.5-flash)
-  const runAiAnalysis = async () => {
-    setAiLoading(true);
+  // ★ AI 주가 검색 함수 (핵심 기능)
+  const fetchPricesViaAI = async () => {
     try {
       const apiKey = import.meta.env.VITE_API_KEY;
-      if (!apiKey) throw new Error("API Key가 설정되지 않았습니다.");
+      if (!apiKey) throw new Error("API Key 없음");
 
       const ai = new GoogleGenAI({ apiKey });
       
       const prompt = `
-        You are a Wall Street Quant Analyst for SOXL (3x Semiconductor Bull ETF).
-        
-        Task 1: Search for exactly 6 REAL-TIME news items (last 24h).
-        - 3 General Macro News (category: 'macro').
-        - 3 Semiconductor Specific News (category: 'sector').
-        
-        Task 2: Find the Economic Calendar for the NEXT 5 DAYS.
-        
-        Task 3: Generate a weekly strategy.
+        Search for the CURRENT real-time price and change percentage for these:
+        1. SOXL ETF
+        2. PHLX Semiconductor Index (SOX)
+        3. NASDAQ 100 Index
+        4. US 10 Year Treasury Yield
+        5. USD/KRW Exchange Rate
+        6. Bitcoin (BTC/USD)
+        7. KOSPI Index
+        8. VIX Index
 
-        Return JSON schema only.
+        Return ONLY a JSON object with keys: soxl, sox, ndx, tnx, krw, btc, kospi, vix.
+        Format for each: { "price": number, "change": number, "changePercent": number }
+        Example: { "soxl": { "price": 55.20, "change": 1.2, "changePercent": 2.1 } }
       `;
 
+      // 최신 SDK 방식 적용
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // ★ [수정] 안정적인 모델로 변경
+        model: 'gemini-1.5-flash',
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
+            tools: [{ googleSearch: {} }],
+            responseMimeType: "application/json"
         }
       });
 
       const text = response.text();
       
       if (text) {
-        const result = JSON.parse(text);
-        if (result.weeklyFocus) setWeeklyFocus(result.weeklyFocus);
-        if (result.schedule) setWeeklySchedule(result.schedule);
-        if (result.news && Array.isArray(result.news)) {
+        const data = JSON.parse(text);
+        updateStocksState(data, 'AI Search 🤖'); // 출처를 AI로 표시
+      } else {
+        throw new Error("AI 응답 해석 실패");
+      }
+
+    } catch (aiError) {
+      console.error("AI Price Search Failed", aiError);
+      setError("데이터 연결 실패. (데모 데이터 표시됨)");
+      // 최악의 경우: 데모 데이터 표시
+      setStocks({
+        soxl: INITIAL_SOXL, sox: INITIAL_SOX, ndx: INITIAL_NDX, tnx: INITIAL_TNX,
+        krw: INITIAL_KRW, vix: INITIAL_VIX, btc: INITIAL_BTC, kospi: INITIAL_KOSPI
+      });
+      setDataSource("Demo");
+    }
+  };
+
+  // 초기 실행
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // 2. AI 뉴스 분석 로직 (기존 유지 + 모델명 명시)
+  const runAiAnalysis = async () => {
+    setAiLoading(true);
+    try {
+      const apiKey = import.meta.env.VITE_API_KEY;
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const prompt = `
+        You are a Wall Street Quant Analyst for SOXL.
+        Task 1: Search for 6 REAL-TIME news (3 Macro, 3 Sector).
+        Task 2: Find Economic Calendar for next 5 days.
+        Task 3: Generate Weekly Strategy.
+        Return JSON Schema.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: prompt,
+        config: {
+            tools: [{ googleSearch: {} }],
+            responseMimeType: "application/json"
+        }
+      });
+
+      const text = response.text();
+      
+      if (text) {
+        const resultData = JSON.parse(text);
+
+        if (resultData.weeklyFocus) setWeeklyFocus(resultData.weeklyFocus);
+        if (resultData.schedule) setWeeklySchedule(resultData.schedule);
+        
+        // Grounding Metadata 처리
+        if (resultData.news && Array.isArray(resultData.news)) {
            const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-           const newsWithLinks = result.news.map((item: NewsItem, index: number) => {
+           const newsWithLinks = resultData.news.map((item: NewsItem, index: number) => {
              let url = item.url;
              if (!url && groundingChunks) {
                 const webChunk = groundingChunks.find((c:any) => c.web?.uri);
@@ -150,8 +200,7 @@ const App: React.FC = () => {
       }
 
     } catch (e: any) {
-      console.error("AI Error", e);
-      alert(`AI 분석 오류: ${e.message || "잠시 후 다시 시도해주세요."}`);
+      alert(`AI 분석 오류: ${e.message}`);
     } finally {
       setAiLoading(false);
     }
@@ -198,9 +247,9 @@ const App: React.FC = () => {
                     className="text-[10px] font-medium px-2 py-0.5 rounded flex items-center gap-1 border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 transition-colors"
                   >
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                    {loading ? 'Updating...' : 'Refresh Prices'}
+                    {loading ? 'Searching...' : 'Refresh Prices'}
                   </button>
-                  {lastUpdated && <span className="text-[10px] text-slate-400">Updated: {lastUpdated}</span>}
+                  {lastUpdated && <span className="text-[10px] text-slate-400">Updated: {lastUpdated} ({dataSource})</span>}
               </div>
             </div>
           </div>
@@ -215,7 +264,7 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
         {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+            <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 animate-pulse">
                 <AlertCircle className="w-4 h-4" />
                 {error}
             </div>
@@ -276,49 +325,49 @@ const App: React.FC = () => {
               value={stocks.ndx.price?.toLocaleString(undefined, {maximumFractionDigits:0})} 
               change={`${stocks.ndx.changePercent?.toFixed(2)}%`} 
               trend={stocks.ndx.trend} 
-              source="Yahoo" 
+              source={stocks.ndx.source || "Yahoo"} 
             />
             <MacroCard 
               title="Phila. Semiconductor" 
               value={stocks.sox.price?.toLocaleString(undefined, {maximumFractionDigits:0})} 
               change={`${stocks.sox.changePercent?.toFixed(2)}%`} 
               trend={stocks.sox.trend} 
-              source="Yahoo" 
+              source={stocks.sox.source || "Yahoo"} 
             />
             <MacroCard 
               title="US 10Y Treasury" 
               value={`${stocks.tnx.price?.toFixed(2)}%`} 
               change={`${stocks.tnx.changePercent?.toFixed(2)}%`} 
               trend={stocks.tnx.trend} 
-              source="Yahoo" 
+              source={stocks.tnx.source || "Yahoo"} 
             />
             <MacroCard 
               title="USD/KRW" 
               value={`₩${stocks.krw.price?.toFixed(0)}`} 
               change={`${stocks.krw.changePercent?.toFixed(2)}%`} 
               trend={stocks.krw.trend} 
-              source="Yahoo" 
+              source={stocks.krw.source || "Yahoo"} 
             />
             <MacroCard 
               title="Bitcoin" 
               value={`$${stocks.btc.price?.toLocaleString(undefined, {maximumFractionDigits:0})}`} 
               change={`${stocks.btc.changePercent?.toFixed(2)}%`} 
               trend={stocks.btc.trend} 
-              source="Yahoo" 
+              source={stocks.btc.source || "Yahoo"} 
             />
             <MacroCard 
               title="KOSPI" 
               value={stocks.kospi.price?.toLocaleString(undefined, {maximumFractionDigits:2})} 
               change={`${stocks.kospi.changePercent?.toFixed(2)}%`} 
               trend={stocks.kospi.trend} 
-              source="KRX" 
+              source={stocks.kospi.source || "KRX"} 
             />
             <MacroCard 
               title="VIX (Volatility)" 
               value={stocks.vix.price?.toFixed(2)} 
               change={`${stocks.vix.changePercent?.toFixed(2)}%`} 
               trend={stocks.vix.trend} 
-              source="Yahoo" 
+              source={stocks.vix.source || "Yahoo"} 
             />
           </div>
         </section>

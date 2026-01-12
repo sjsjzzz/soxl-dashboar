@@ -7,11 +7,19 @@ import Heatmap from './components/Heatmap';
 import { GoogleGenAI } from "@google/genai";
 import { 
   WEEKLY_FOCUS as INITIAL_FOCUS, WEEKLY_SCHEDULE as INITIAL_SCHEDULE, IMPACT_ANALYSIS, MARKET_NEWS as INITIAL_NEWS,
-  CONSTITUENTS as INITIAL_CONSTITUENTS
+  CONSTITUENTS as INITIAL_CONSTITUENTS,
+  SOXL_ETF as INITIAL_SOXL, // 데모 데이터 불러오기
+  SOX_INDEX as INITIAL_SOX,
+  NASDAQ_DATA as INITIAL_NDX,
+  US_TREASURY_DATA as INITIAL_TNX,
+  KRW_USD_DATA as INITIAL_KRW,
+  VIX_DATA as INITIAL_VIX,
+  BITCOIN_DATA as INITIAL_BTC,
+  KOSPI_DATA as INITIAL_KOSPI
 } from './constants';
 import { WeeklyFocus, NewsItem, DailySchedule } from './types';
 
-// 초기 로딩용 빈 데이터 객체 (에러 방지용)
+// 초기 로딩용 빈 데이터 객체
 const EMPTY_STOCK = { price: 0, change: 0, changePercent: 0, trend: 'neutral', source: 'Loading...' };
 
 const App: React.FC = () => {
@@ -21,7 +29,6 @@ const App: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<string | null>("Initializing...");
   const [error, setError] = useState<string | null>(null);
 
-  // [중요] 개별 상태 대신 통합 상태로 관리 (API 응답과 일치시킴)
   const [stocks, setStocks] = useState<any>({
     soxl: { ...EMPTY_STOCK, price: 0 },
     sox: EMPTY_STOCK,
@@ -33,31 +40,27 @@ const App: React.FC = () => {
     kospi: EMPTY_STOCK
   });
   
-  // AI & 기타 상태
   const [weeklyFocus, setWeeklyFocus] = useState<WeeklyFocus>(INITIAL_FOCUS);
   const [marketNews, setMarketNews] = useState<NewsItem[]>(INITIAL_NEWS);
   const [weeklySchedule, setWeeklySchedule] = useState<DailySchedule[]>(INITIAL_SCHEDULE);
   const [constituents, setConstituents] = useState(INITIAL_CONSTITUENTS);
 
-  // 시계
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 1. 실제 데이터 가져오기 (Yahoo Finance via Vercel API)
+  // 1. 실제 데이터 가져오기 (실패 시 데모 데이터 사용)
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // 아까 만든 api/stocks.ts 호출
       const res = await fetch('/api/stocks'); 
       if (!res.ok) throw new Error('Failed to fetch market data');
       
       const data = await res.json();
       
-      // 받아온 데이터를 상태에 적용
       setStocks({
         soxl: { ...data.soxl, source: 'Yahoo', trend: data.soxl.change >= 0 ? 'up' : 'down' },
         sox: { ...data.sox, source: 'Yahoo', trend: data.sox.change >= 0 ? 'up' : 'down' },
@@ -72,25 +75,34 @@ const App: React.FC = () => {
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (e) {
       console.error(e);
-      // 에러 나면 조용히 로그만 찍거나 사용자에게 알림
-      setError("실시간 데이터를 불러오지 못했습니다. (잠시 후 다시 시도)");
+      // ★ 에러 발생 시 데모 데이터로 복구 (화면이 비어보이지 않게 처리)
+      setError("실시간 데이터 연결 불안정. (데모 모드로 전환됩니다)");
+      setStocks({
+        soxl: INITIAL_SOXL,
+        sox: INITIAL_SOX,
+        ndx: INITIAL_NDX,
+        tnx: INITIAL_TNX,
+        krw: INITIAL_KRW,
+        vix: INITIAL_VIX,
+        btc: INITIAL_BTC,
+        kospi: INITIAL_KOSPI
+      });
+      setLastUpdated("Demo Data");
     } finally {
       setLoading(false);
     }
   };
 
-  // 앱 시작 시 데이터 자동 로드
   useEffect(() => {
     fetchData();
   }, []);
 
-  // 2. AI 분석 로직 (Google Gemini)
+  // 2. AI 분석 로직 (모델 변경: 1.5-flash)
   const runAiAnalysis = async () => {
     setAiLoading(true);
     try {
-      // [수정] process.env 대신 import.meta.env 사용 (Vite 필수)
       const apiKey = import.meta.env.VITE_API_KEY;
-      if (!apiKey) throw new Error("API Key가 설정되지 않았습니다. Vercel 환경변수를 확인하세요.");
+      if (!apiKey) throw new Error("API Key가 설정되지 않았습니다.");
 
       const ai = new GoogleGenAI({ apiKey });
       
@@ -98,40 +110,31 @@ const App: React.FC = () => {
         You are a Wall Street Quant Analyst for SOXL (3x Semiconductor Bull ETF).
         
         Task 1: Search for exactly 6 REAL-TIME news items (last 24h).
-        - 3 General Macro News (category: 'macro'): e.g., Fed rates, Inflation, Geopolitics.
-        - 3 Semiconductor Specific News (category: 'sector'): e.g., Nvidia, TSMC, Broadcom.
+        - 3 General Macro News (category: 'macro').
+        - 3 Semiconductor Specific News (category: 'sector').
         
         Task 2: Find the Economic Calendar for the NEXT 5 DAYS.
         
-        Task 3: Generate a weekly strategy based on the news.
+        Task 3: Generate a weekly strategy.
 
-        Return a JSON object with this schema:
-        {
-          "weeklyFocus": { "title": "...", "description": "...", "notes": [{"label": "Macro", "text": "..."}] },
-          "news": [ { "category": "macro", "source": "...", "time": "...", "title": "...", "sentiment": "negative", "impact": "...", "url": "..." } ],
-          "schedule": [ { "date": "...", "day": "...", "tags": ["..."], "events": ["..."] } ]
-        }
+        Return JSON schema only.
       `;
 
-      // [수정] 모델명 변경 및 메서드 호출 방식 수정
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp', // 최신 모델 사용
+        model: 'gemini-1.5-flash', // ★ [수정] 안정적인 모델로 변경
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }], // 검색 기능 활성화
+          tools: [{ googleSearch: {} }],
           responseMimeType: "application/json"
         }
       });
 
-      const text = response.text(); // 함수 형태로 호출해야 함
+      const text = response.text();
       
       if (text) {
         const result = JSON.parse(text);
-        
         if (result.weeklyFocus) setWeeklyFocus(result.weeklyFocus);
         if (result.schedule) setWeeklySchedule(result.schedule);
-
-        // 뉴스 링크 처리 (Grounding Metadata)
         if (result.news && Array.isArray(result.news)) {
            const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
            const newsWithLinks = result.news.map((item: NewsItem, index: number) => {
@@ -147,8 +150,8 @@ const App: React.FC = () => {
       }
 
     } catch (e: any) {
-      console.error("AI Analysis Failed", e);
-      alert(`AI 분석 오류: ${e.message || "설정을 확인해주세요."}`);
+      console.error("AI Error", e);
+      alert(`AI 분석 오류: ${e.message || "잠시 후 다시 시도해주세요."}`);
     } finally {
       setAiLoading(false);
     }
@@ -177,8 +180,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100 pb-12">
-      
-      {/* HEADER */}
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 flex flex-col md:flex-row justify-between items-center gap-3 md:gap-0">
           <div className="flex items-center gap-3">
@@ -213,7 +214,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-        
         {error && (
             <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
@@ -221,7 +221,6 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* 1. WEEKLY FOCUS BANNER (AI Powered) */}
         <section className="bg-white border border-indigo-200 rounded-2xl p-5 md:p-6 relative overflow-hidden group shadow-sm hover:shadow-md transition-all">
             <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
             <div className="flex flex-col lg:flex-row gap-6">
@@ -266,14 +265,12 @@ const App: React.FC = () => {
             </div>
         </section>
 
-        {/* 2. MACRO INDICATORS (Connected to Real Data) */}
         <section className="space-y-4">
           <h3 className="text-slate-800 font-bold text-lg flex items-center gap-2 pl-1">
               <BarChart2 className="w-5 h-5 text-blue-600" />
               Macro Snapshot
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
-            {/* 소수점 및 콤마 포맷팅 적용 */}
             <MacroCard 
               title="NASDAQ 100" 
               value={stocks.ndx.price?.toLocaleString(undefined, {maximumFractionDigits:0})} 
@@ -326,7 +323,6 @@ const App: React.FC = () => {
           </div>
         </section>
 
-        {/* 3. CORE: SEMICONDUCTOR & SOXL */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-md relative overflow-hidden group flex flex-col justify-between">
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none z-0">
@@ -343,9 +339,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Flex Container for Price and Chart */}
               <div className="flex-1 flex flex-col md:flex-row gap-6 items-center">
-                 {/* Left: Price Data */}
                  <div className="flex-1 w-full">
                     <div className={`text-6xl font-mono font-bold tracking-tighter ${stocks.soxl.change >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {stocks.soxl.price ? stocks.soxl.price.toFixed(2) : "Loading..."}
@@ -371,16 +365,14 @@ const App: React.FC = () => {
                         </div>
                          <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
                              <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">RSI (14) Status</div>
-                             <RsiBar value={50} /> {/* RSI는 추가 계산 필요, 일단 50으로 고정 */}
+                             <RsiBar value={50} />
                         </div>
                     </div>
                  </div>
 
-                 {/* Right: Big Chart Area */}
                  <div className="w-full md:w-1/2 h-40 md:h-full min-h-[160px] bg-slate-50 rounded-xl border border-slate-200 p-2 relative">
                      <div className="absolute top-2 left-3 text-[10px] font-bold text-slate-400 uppercase z-10">Intraday Trend (Close)</div>
                      <div className="w-full h-full flex items-center justify-center text-slate-300">
-                        {/* 스파크라인은 히스토리 데이터가 필요하므로 일단 플레이스홀더 */}
                         <SparkLine data={[]} trend={stocks.soxl.trend} type="area" strokeWidth={3} />
                      </div>
                  </div>
@@ -389,7 +381,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Context Card */}
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col h-full">
             <h3 className="text-slate-800 font-bold text-sm uppercase flex items-center gap-2 mb-3">
                 <TrendingUp className="w-4 h-4 text-blue-500" />
@@ -401,9 +392,7 @@ const App: React.FC = () => {
           </div>
         </section>
 
-        {/* 4. BOTTOM: CALENDAR & NEWS */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             {/* LEFT: CALENDAR */}
              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                 <h3 className="text-slate-800 font-bold flex items-center gap-2 mb-4">
                     <Calendar className="w-5 h-5 text-blue-600" />
@@ -435,7 +424,6 @@ const App: React.FC = () => {
                 </div>
              </div>
 
-             {/* RIGHT: NEWS */}
              <div className="flex flex-col gap-6">
                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex-1">
                     <h3 className="text-slate-800 font-bold flex items-center gap-2 mb-4">
@@ -464,7 +452,6 @@ const App: React.FC = () => {
              </div>
         </section>
 
-        {/* 5. STRATEGY CARDS */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-slate-800 text-white rounded-2xl p-6 relative overflow-hidden">
                 <div className="relative z-10">
